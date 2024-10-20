@@ -108,8 +108,6 @@ Access advanced settings through the TwinSync preferences menu:
 - **Slow Performance**: Check your network connection or try excluding large, frequently changing files.  
 - **Conflicts**: Review the conflict resolution settings and manually resolve conflicts if needed.  
 
-For more help, consult our [full documentation](https://twinsync.docs.example.com) or reach out to support.
-
 ---
 
 ## Contributing
