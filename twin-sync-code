@@ -1,0 +1,141 @@
+#!/bin/zsh
+
+# ================================================================
+# TwinSync: Folder Duplicator using Homebrew's rsync (Version 3.3.0)
+# Description: Duplicates a folder to the Desktop using rsync with
+#              enhanced options to preserve metadata and ensure
+#              data integrity.
+# Usage: Drag and drop a folder onto the Platypus droplet.
+# ================================================================
+
+# ---------------------------
+# 0. Define the path to Homebrew's rsync binary
+# ---------------------------
+
+# For Apple Silicon Macs (M1/M2)
+RSYNC_PATH="/opt/homebrew/bin/rsync"
+
+# Uncomment the following line for Intel Macs
+# RSYNC_PATH="/usr/local/bin/rsync"
+
+# ---------------------------
+# 0.1. Verify that the specified rsync exists and is executable
+# ---------------------------
+
+if [[ ! -x "$RSYNC_PATH" ]]; then
+  osascript -e "display dialog \"Error: Homebrew's rsync not found at '$RSYNC_PATH'. Please ensure rsync is installed via Homebrew.\" buttons {\"OK\"} default button \"OK\""
+  exit 1
+fi
+
+# Optional: Display rsync version for confirmation
+# Uncomment the following lines if you want to show the rsync version
+# rsync_version=$("$RSYNC_PATH" --version | head -n 1)
+# osascript -e "display dialog \"Using rsync version: $rsync_version\" buttons {\"OK\"} default button \"OK\""
+
+# ---------------------------
+# 1. Get the Folder Path from Platypus
+# ---------------------------
+
+src_folder="$1"
+
+# ---------------------------
+# 2. If no folder was provided, do nothing and exit silently
+# ---------------------------
+
+if [[ -z "$src_folder" ]]; then
+  exit 0
+fi
+
+# ---------------------------
+# 3. Remove any surrounding quotes from the folder path
+# ---------------------------
+
+src_folder=$(echo "$src_folder" | sed 's/^"//' | sed 's/"$//')
+
+# ---------------------------
+# 4. Extract the folder name and create a destination folder name with "rsync folder"
+# ---------------------------
+
+folder_name=$(basename "$src_folder")
+dest_folder="$HOME/Desktop/${folder_name} rsync folder"
+
+# ---------------------------
+# 5. Check if the folder is a valid directory
+# ---------------------------
+
+if [[ ! -d "$src_folder" ]]; then
+  osascript -e "display dialog \"Error: The folder '$src_folder' does not exist or is not a directory.\" buttons {\"OK\"} default button \"OK\""
+  exit 1
+fi
+
+# ---------------------------
+# 6. Remove any .DS_Store files from the source folder silently (no warnings shown)
+# ---------------------------
+
+find "$src_folder" -name '.DS_Store' -type f -delete 2>/dev/null
+
+# ---------------------------
+# 7. Check if the destination folder already exists
+# ---------------------------
+
+if [[ -d "$dest_folder" ]]; then
+  osascript -e "display dialog \"Error: The folder '$dest_folder' already exists on your Desktop.\" buttons {\"OK\"} default button \"OK\""
+  exit 1
+fi
+
+# ---------------------------
+# 8. Define rsync options as an array to ensure each option is separate
+# ---------------------------
+
+RSYNC_OPTIONS=(
+  -a        # Archive mode; equals -rlptgoD (no -H)
+  -X        # Preserve extended attributes
+  -N        # Preserve creation times
+  -H        # Preserve hard links
+  -x        # Don't cross filesystem boundaries
+  --fileflags  # Preserve file flags
+  --delete      # Delete extraneous files from destination
+)
+
+# ---------------------------
+# 9. Use Homebrew's rsync to copy the folder and preserve metadata
+# ---------------------------
+
+# Execute rsync with the defined options
+rsync_output=$("$RSYNC_PATH" "${RSYNC_OPTIONS[@]}" "$src_folder/" "$dest_folder/" 2>&1)
+rsync_status=$?
+
+# ---------------------------
+# 10. Check the rsync status and display appropriate messages
+# ---------------------------
+
+if [[ $rsync_status -eq 0 ]]; then
+  # Remove .DS_Store files from destination
+  find "$dest_folder" -name '.DS_Store' -type f -delete 2>/dev/null
+
+  # Calculate the total size of the files in bytes
+  total_size_bytes=$(find "$src_folder" -type f -exec stat -f%z {} + | awk '{total += $1} END {print total}')
+
+  # Convert bytes to decimal gigabytes and megabytes
+  total_size_gb=$(echo "scale=2; $total_size_bytes / 1000000000" | bc)
+  total_size_mb=$(echo "scale=2; $total_size_bytes / 1000000" | bc)
+
+  # Count the total number of files in the folder
+  total_files=$(find "$src_folder" -type f | wc -l)
+
+  # Determine if we should show GB or MB
+  if (( $(echo "$total_size_gb >= 1" | bc -l) )); then
+    size_display="${total_size_gb} GB"
+  else
+    size_display="${total_size_mb} MB"
+  fi
+
+  # Display the summary message with total files and size
+  osascript -e "display dialog \"Folder duplicated successfully! \\nTotal files copied: $total_files \\nTotal size: $size_display\" buttons {\"OK\"} default button \"OK\""
+else
+  # If rsync failed, show an error message with rsync output
+  # Truncate the rsync_output if it's too long to avoid dialog overflow
+  truncated_output=$(echo "$rsync_output" | head -n 10)
+  osascript -e "display dialog \"Error: Failed to duplicate the folder.\\n\\nDetails:\\n$truncated_output\" buttons {\"OK\"} default button \"OK\""
+  exit 1
+fi
